@@ -1,0 +1,61 @@
+<html>
+	<head><title>FLV Player Embed Code Generator</title></head>
+	<script language='javascript'>
+		function generateCode(params){
+			var flashVars = new Array();
+			
+			for(t=0; params[t]; t++)
+				if(document.getElementById(params[t]).value == 'on'){
+					if(document.getElementById(params[t]).checked)
+						flashVars.push(params[t]+'='+document.getElementById(params[t]).value);
+				} else {
+					if(params[t] == 'width' || params[t] == 'height'){
+						if(params[t] == 'width') width = document.getElementById(params[t]).value;
+						if(params[t] == 'height') height = document.getElementById(params[t]).value;
+					}
+					else
+						flashVars.push(params[t]+'='+document.getElementById(params[t]).value);
+				}
+
+			flashVars = flashVars.join('&');
+			
+			if(!width) width=400;
+			if(!height) height=300;
+			
+			var code = "<"+"script src='AC_RunActiveContent.js' language='javascript'></"+"script>\n";
+			code += "<!-- saved from url=(0013)about:internet -->\n";
+			code += "<"+"script language='javascript'>\n";
+			code += " AC_FL_RunContent('codebase', 'http://download.macromedia.com/pub/shockwave/cabs/flash/swflash.cab#version=9,0,0,0', 'width', '"+width+"', 'height', '"+height+"', 'src', ((!DetectFlashVer(9, 0, 0) && DetectFlashVer(8, 0, 0)) ? 'player8' : 'player'), 'pluginspage', 'http://www.macromedia.com/go/getflashplayer', 'id', 'flvPlayer', 'allowFullScreen', 'true', 'movie', ((!DetectFlashVer(9, 0, 0) && DetectFlashVer(8, 0, 0)) ? 'player8' : 'player'), 'FlashVars', '"+flashVars+"');\n";
+			code += "</"+"script>\n";
+			code += "<"+"noscript>\n";
+			code += " <object width='"+width+"' height='"+height+"' id='flvPlayer'>\n";
+			code += "  <param name='allowFullScreen' value='true'>\n";
+			code += "  <param name='movie' value='player.swf?"+flashVars+"'>\n";
+			code += "  <embed src='player.swf?"+flashVars+"' width='"+width+"' height='"+height+"' allowFullScreen='true' type='application/x-shockwave-flash'>\n";
+			code += " </object>\n";
+			code += "</noscript>\n";
+			
+			document.getElementById('out').innerHTML = "<textarea  style='width: 100%; height: 500px'>"+code+"</textarea>";
+		}
+	</script>
+	<body style='font-family: verdana; margin-top: 30px'>
+		<div align='center'>
+			<div align='right' style='width: 400px; margin-bottom: 20px'>FLV File's Name <input id='movie' style='width: 150px' type='text'></div>
+			<div align='right' style='width: 400px'>Width <input id='width' style='width: 150px' type='text'></div>
+			<div align='right' style='width: 400px; margin-bottom: 10px'>Height <input id='height' style='width: 150px' type='text'></div>
+			<div align='right' style='width: 400px'>Foreground Color <input value='0x13ABEC' id='fgcolor' style='width: 150px' type='text'></div>
+			<div align='right' style='width: 400px; margin-bottom: 10px'>Background Color <input value='0x051615' id='bgcolor' style='width: 150px' type='text'></div>
+			<div align='right' style='width: 400px'>Volume (0-100) <input id='volume' style='width: 150px' type='text'></div>
+			<div align='right' style='width: 400px'>Autoplay <input id='autoplay' style='margin-left: 10px' type='checkbox'></div>
+			<div align='right' style='width: 400px'>Autoload <input id='autoload' style='margin-left: 10px' type='checkbox' checked=checked'></div>
+			<div align='right' style='width: 400px'>Mute <input id='mute' style='margin-left: 10px' type='checkbox'></div>
+			<div align='right' style='width: 400px'>Autorewind <input id='autorewind' style='margin-left: 10px' type='checkbox' checked=checked'></div>
+			<div align='right' style='width: 400px'>Loop <input id='loop' style='margin-left: 10px' type='checkbox'></div>
+			<div align='right' style='width: 400px'>Mute Only <input id='muteonly' style='margin-left: 10px' type='checkbox'></div>
+			<div align='right' style='width: 400px'>Click URL <input id='clickurl' style='margin-left: 10px' type='text'></div>
+			<div align='right' style='width: 400px'>Click Target <input id='clicktarget' style='margin-left: 10px' type='text'></div>
+			<div align='center' style='margin: 30px 0px 50px; width: 400px'><input type='button' onclick="generateCode(new Array('movie', 'width', 'height', 'bgcolor', 'fgcolor', 'volume', 'autoplay', 'autoload', 'mute', 'autorewind', 'loop', 'muteonly', 'clickurl', 'clicktarget'))" value='Generate Code'></div>
+			<div id='out' style='height: 400px' align='center'></div>
+		</div>
+	</body>
+</html>
