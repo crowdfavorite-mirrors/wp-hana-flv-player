@@ -2,8 +2,8 @@
 /*
 Plugin Name: Hana Flv Player
 Plugin URI: http://wpmarketing.org/plugins/hana-flv-player/
-Description: The best way to embed Flash Player and Flash movie in your Wordpress Blog. Includes GPL Flowplayer and OS FLV player. Usage: <code>[hana-flv-player video='/source_video.flv' /]</code>
-Version: 2.6
+Description: The best way to embed Flash & HTML5 Video player in your Wordpress Blog. Includes GPL Flowplayer (2,3,5), OS FLV player, and MediaElement.js. Usage: <code>[hana-flv-player video='/source_video.flv' /]</code>
+Version: 3.1.2
 Author: HanaDaddy
 Author URI: http://neox.net
 */
@@ -15,7 +15,7 @@ class hana_flv_player
 	
 
 	var $plugin_folder ='hana-flv-player';
-	var $version="2.6";
+	var $version="3.1.2";
 	var $user_attr ;
 	var $update_result='';
 	
@@ -24,19 +24,21 @@ class hana_flv_player
 	var $plugin_url;
 
 	//when new player is added , add to below two arrays
-	var $player_used= array('1'=> 0,'2'=>0,'3'=>0 ,'4'=>0);
+	var $player_used= array('1'=> 0,'2'=>0,'3'=>0 ,'4'=>0,'5'=>0,'6'=>0);
 	var $player_base= array('1'=> 'osflv',
 				'2'=> 'flowplayer',
 				'3'=> 'template_maxi_1.6.0',
 				'4'=> 'flowplayer3',
-				);
+				'5'=> 'mediaelement',
+				'6'=> 'flowplayer5',
+	);
    
 	var $default_attr=array(
 						//'flowplayer'=>'',
 						//'osflvplayer'=>'',
-						'player'=>'4',  // 1 : OS FLV , 2: flow player, 3: MAXI, 4: flow player 3
+						'player'=>'5',  // 1 : OS FLV , 2: flow player, 3: MAXI, 4: flow player 3 , 5: MediaElement.js
 						'width'=>'400',
-						'height'=>'330',
+						'height'=>'',
 						'description'=>'',
 						'autoplay'=>'false',
 						'loop'=>'false',
@@ -46,12 +48,15 @@ class hana_flv_player
 						'clicktarget'=>'',
 						'video'=>'',		// just need to be here for div_attr checking
 						'splashimage'=>'',	// just need to be here for div_attr checking
-						
+						'event_tracking'=>'no',
 						'more_2'=> '', 		// just need to be here for div_attr checking
 						'more_3'=> '',		// just need to be here for div_attr checking
-						'more_4'=> ''
+						'more_4'=> '',		// just need to be here for div_attr checking
+						'more_5'=> '',		// just need to be here for div_attr checking
+						'skin'=>'',			// 20121204 only applied to MediaElement.js
 						);
 	var $excerpt=false;					
+ 	var $skins=array();
  		
 	function hana_flv_player() {
 		$this->user_attr = get_option('hanaflv_options');
@@ -71,17 +76,49 @@ class hana_flv_player
 
 	function bind_hooks() {
 		// third arg should be large enough . If executed early in the filter chain, so we do not see <br />
+		if (!is_admin()) {
+			//20120519 If theme loads version of jquery not as a standard wp_enqueue_script, it may break something. Let's just disable for now. 
+			//20120521 We shouldn't disable it (many cases, jquery is not enabled by default) but can give as an option to disable it.
+			//20120605 disabled wp_enqueue_script jquery, but added a routine to include mediaelement jquery script if jquery is not loaded
+			//wp_enqueue_script("jquery"); //make sure we load jquery;
+		}
+		
+		add_filter('wp_head',array(&$this,'print_head_javascript'));
 		add_filter('the_content', array(&$this,'hana_flv_return') , 1);
-
+		add_filter('widget_text', array(&$this,'hana_flv_return') );
+		
 		//remove_filter('get_the_excerpt', 'wp_trim_excerpt');
 		//add_filter('get_the_excerpt', array(&$this,'hana_flv_return_exerpt'));
 
 		add_action('admin_menu' , array(&$this,'hana_flv_admin_menu') );
 
 		// init process for button control
-		add_action('init', array(&$this,'hana_flv_addbuttons'));
-		add_action('admin_print_scripts',array(&$this,'admin_javascript'));
-		add_action('admin_footer',array(&$this,'admin_footer'));
+		//show only when editing a post or page.		
+		if (strpos($_SERVER['REQUEST_URI'], 'post.php') || strpos($_SERVER['REQUEST_URI'], 'post-new.php') || strpos($_SERVER['REQUEST_URI'], 'page-new.php') || strpos($_SERVER['REQUEST_URI'], 'page.php')) {
+			add_action('init', array(&$this,'hana_flv_addbuttons'));
+			add_action('admin_print_scripts',array(&$this,'admin_javascript'));
+			add_action('admin_print_styles',array(&$this,'admin_style'));
+			add_action('admin_footer',array(&$this,'admin_footer'));
+		}
+	}
+
+	function print_head_javascript(){
+
+
+		echo "
+<script type='text/javascript'>
+var g_hanaFlash = false;
+try {
+  var fo = new ActiveXObject('ShockwaveFlash.ShockwaveFlash');
+  if(fo) g_hanaFlash = true;
+}catch(e){
+  if(navigator.mimeTypes ['application/x-shockwave-flash'] != undefined) g_hanaFlash = true;
+}
+function hanaTrackEvents(arg1,arg2,arg3,arg4) { if ( typeof( pageTracker ) !=='undefined') { pageTracker._trackEvent(arg1, arg2, arg3, arg4);} else if ( typeof(_gaq) !=='undefined'){  _gaq.push(['_trackEvent', arg1, arg2, arg3, arg4]);}}
+function hana_check_mobile_device(){ if(navigator.userAgent.match(/iPhone/i) || navigator.userAgent.match(/iPod/i) || navigator.userAgent.match(/iPad/i)  || navigator.userAgent.match(/Android/i)) { return true; }else return false; }
+</script>
+";
+		
 	}
 	
 	function hana_flv_return($content) {
@@ -95,10 +132,31 @@ class hana_flv_player
 		return $text;
 	}
 */	
+	//check if maxi is installed manually
+	function check_if_maxi_exist(){
+		return file_exists( dirname(__FILE__) . '/template_maxi_1.6.0/template_maxi/player_flv_maxi.swf');
+	}
+	
+	function check_if_apple(){
+		//20120422 There is a problem if any Wordpress cache plugin is used. Should be disabled for now. 		
+		/*if (strpos($_SERVER['HTTP_USER_AGENT'], 'iPad') ||
+			strpos($_SERVER['HTTP_USER_AGENT'], 'iPhone') ||
+			strpos($_SERVER['HTTP_USER_AGENT'], 'iPod')) {
+			return true;
+		}*/
+		return false;
+	}
+
+
+	function get_extension($url){
+		return substr($url,-3);
+	}
+    
 	function hana_flv_admin_menu() {
 		if ( function_exists('add_options_page') ) {
-			add_options_page($this->admin_setting_title,$this->admin_setting_menu, 8, __FILE__,array(&$this,'hana_flv_options_page'));
-
+			global $wp_version;
+			if ( $wp_version < 2 ) $capability=8; else $capability='manage_options';
+			add_options_page($this->admin_setting_title,$this->admin_setting_menu, $capability, __FILE__,array(&$this,'hana_flv_options_page'));
 		}
 	}
 	
@@ -134,13 +192,24 @@ class hana_flv_player
 	    
 		reset($flv_attr);
 		while(list($key,$value) = each($flv_attr)){
-			if ($key != 'video' && $key != 'clickurl' && $key !='splashimage' && $key != 'more_2' && $key != 'more_3' && $key !='more_4')
+			if ($key != 'video' && $key != 'clickurl' && $key !='splashimage' && $key != 'more_2' && $key != 'more_3' && $key !='more_4' && $key != 'more_5' )
 				$flv_attr[$key] = strtolower($value);
 		}
 		
 		if (! array_key_exists('player',$flv_attr)){
 			$flv_attr['player']=$this->user_attr['player'];
 		}
+		
+		
+		//20120411 
+		if ($flv_attr['player'] ==3 && !$this->check_if_maxi_exist() )
+			$flv_attr['player']=4;
+
+		//20120417 HTML5 for Apple device 
+		if ($this->check_if_apple() ) { // && strtolower($this->get_extension($flv_attr['video'])) =='mp4' ){
+			$flv_attr['player']=5;	//mediaelement is HTML5 supports ipad, iphone. But what happens if the file is not mp4?
+		}
+		
 	    if (! array_key_exists('width',$flv_attr)){
 			$flv_attr['width']=$this->user_attr['width'];
 	    }
@@ -159,7 +228,9 @@ class hana_flv_player
 	    if (! array_key_exists('autoload',$flv_attr)){
 			$flv_attr['autoload']=$this->user_attr['autoload'];
 	    }
-
+  
+	    $flv_attr['event_tracking']=$this->user_attr['event_tracking'];
+	    
 	    if (! array_key_exists('more_2',$flv_attr)) {
 	    	$flv_attr['more_2']=$this->user_attr['more_2'];
 	    }
@@ -171,13 +242,30 @@ class hana_flv_player
 	    if (! array_key_exists('more_4',$flv_attr)) {
 	    	$flv_attr['more_4']=$this->user_attr['more_4'];
 	    }
+	    if (! array_key_exists('more_5',$flv_attr)) {
+	    	$flv_attr['more_5']=$this->user_attr['more_5'];
+	    }
 	    
-	    //print "<hr />";
-	    //print_r($flv_attr);
+		if (! array_key_exists('skin',$flv_attr)) {
+	    	$flv_attr['skin']=$this->user_attr['skin'];
+	    }
+	     
 	    
-	   
-	    //var_dump($wp_current_filter);
-	    
+ 	    $autoheight=false;
+	    //Auto height : auto - 4:3 height , autow - 16:9
+	    // widht must exist
+		if ($flv_attr['width'] != '') {
+			if ($flv_attr['height']== '' || $flv_attr['height'] == 'auto'){
+	    		$flv_attr['height'] = round((3/4) * $flv_attr['width']) ;	    		
+	    		$autoheight=true;
+			}else
+			if ($flv_attr['height'] == 'autow'){
+	    		$flv_attr['height'] = round((9/16) * $flv_attr['width']) ;
+	    		$autoheight=true;
+			} 
+			
+		}
+			    
 	    if (is_array($wp_current_filter) &&  array_search('get_the_excerpt',$wp_current_filter) !== FALSE ) {	   
 	    	$text=$flv_attr['description'];
 		if ($text != "" ) 
@@ -199,6 +287,11 @@ class hana_flv_player
 		if ($flv_attr['description'] != "")
 			$description="*Video:".htmlspecialchars($flv_attr['description']);
 	    
+		
+		$inactive_message="Sorry, your browser does not support Flash Video Player";
+		$inactive_style="display:block;width:".$flv_attr['width']."px;height:".$flv_attr['height']."px;background-color:#555555;color:#ffffff;padding:0";
+		
+		
 	    if ($player == '3' ) {
 		// flv player maxi
 		
@@ -223,8 +316,9 @@ class hana_flv_player
 			if ($flv_attr['clicktarget'] != '') {
 				$onclicktarget="&amp;onclicktarget=".$flv_attr['clicktarget'];								
 			}
-			
-			$default_controls="&amp;showstop=1&amp;showvolume=1&amp;showtime=1&amp;showfullscreen=1&amp;srt=1";
+
+			//20120606 disable subtitles SRT (srt=1) causing some issues
+			$default_controls="&amp;showstop=1&amp;showvolume=1&amp;showtime=1&amp;showfullscreen=1";
 			
 			if ($flv_attr['more_3'] != "" ){
 				
@@ -240,16 +334,16 @@ class hana_flv_player
 <object id='monFlash' type='application/x-shockwave-flash' data='".$this->plugin_url."/".$this->player_base[$player]."/template_maxi/player_flv_maxi.swf' width='".$flv_attr['width']."' height='".$flv_attr['height']."'>
 	<param name='movie' value='".$this->plugin_url."/".$this->player_base[$player]."/template_maxi/player_flv_maxi.swf' />
 	<param name='allowFullScreen' value='true' />
-	<param name='wmode' value='transparent'> 
+	<param name='wmode' value='transparent' /> 
 	<param name='FlashVars' value='flv=".$flv_attr['video']."&amp;width=".$flv_attr['width']."&amp;height=".$flv_attr['height']."&amp;autoplay=".$flv_attr['autoplay']."&amp;autoload=".$flv_attr['autoload'].$splashImage."&amp;loop=".$flv_attr['loop'].$onclick.$onclicktarget.$default_controls. $flv_attr['more_3'] ."' />
-				<p>$description</p>
+    <span style='$inactive_style;padding:5px;'><span style='display:block'>$inactive_message</span> $description</span>
 </object></hana-ampersand>";
 
 	    }else 
 	    if ($player == '2' ) {
 		// flowplayer	
 			if ($this->player_used[$player] == 0 )
-				$output = "<hana-ampersand><script type='text/javascript' src='".$this->plugin_url."/".$this->player_base[$player]."/html/flashembed.min.js'></script></hana-ampersand>";
+				$output = "<hana-ampersand><script type='text/javascript' src='".$this->plugin_url."/".$this->player_base[$player]."/html/flashembed2.min.js'></script></hana-ampersand>";
 		
 			$this->player_used[$player] += 1;
 			$splashImage='';
@@ -281,27 +375,35 @@ class hana_flv_player
 			   // if (substr($flv_attr['more_2'],-1) != ','  ) 
 			 	//	$flv_attr['more_2'] = $flv_attr['more_2'] . ',';
 			//}
-				
+			
 			 
-				
+			//initialScale : Scale or fit
+			//For Flowplayer 2, let's leave initialScale as Scale due to a problem showing incorrect scale of first image 
+			if ($autoheight) $scale='fit'; else $scale='scale';
 			$output .="<hana-ampersand>
-			<div $div_attr_string><div id='$flow_id'>$description</div></div>
+			<div $div_attr_string><div id='$flow_id' style='$inactive_style'><div class='inactive_message'></div>$description</div></div>
 <script type='text/javascript'>
-    flashembed('$flow_id',
+if (typeof g_hanaFlash !== 'undefined' && !g_hanaFlash){
+    jQuery('#$flow_id').css( 'padding', '5px' );
+	jQuery('#$flow_id .inactive_message').html('$inactive_message');
+}else{
+    flashembed2('$flow_id',
       { src:'".$this->plugin_url."/".$this->player_base[$player]."/FlowPlayerDark.swf', wmode: 'transparent', width: ".$flv_attr['width'].",  height: ".$flv_attr['height']." },
       { config: { $videoFile autoPlay: ".$flv_attr['autoplay']." ,loop: ".$flv_attr['loop'].", autoRewind: ".$flv_attr['autorewind'].", autoBuffering: ".$flv_attr['autoload'].",
-			$splashImage initialScale: 'scale' " . $flv_attr['more_2'] . "
+			$splashImage initialScale: '$scale' " . $flv_attr['more_2'] . "
       		$playList      	                
 	    }}
     );
+}
 </script></hana-ampersand>";
 
 	    }else
 	    if ($player == '4' ) {	
 		// flowplayer3
-			if ($this->player_used[$player] == 0 )
+			if ($this->player_used[$player] == 0 ) {
 				$output = "<hana-ampersand><script type='text/javascript' src='".$this->plugin_url."/".$this->player_base[$player]."/example/flowplayer-3.2.6.min.js'></script></hana-ampersand>";
-		
+			}
+			
 			$this->player_used[$player] += 1;		
 			 
 			$flow3_id = 'hana_flv_flow3_' . $this->player_used[$player]; 
@@ -318,7 +420,7 @@ class hana_flv_player
 				$splashImage='<img src="'.$flv_attr['splashimage']. '" style="width:'.$flv_attr['width'].'px; height:'.$flv_attr['height'].'px;border:0;margin:0;padding:0" '.$alt.' />';
 			}
 				
-			$output.="<hana-ampersand><div $div_attr_string><div id='$flow3_id' style='display:block;width:".$flv_attr['width']."px;height:". $flv_attr['height']."px;' title=\"$description\">$splashImage</div></div>";
+			$output.="<hana-ampersand><div $div_attr_string><div id='$flow3_id' style='$inactive_style' title=\"$description\">$splashImage</div></div>";
 //			$output.="<hana-ampersand><div $div_attr_string><a href='".$flv_attr['video']."' id='$flow3_id' style='display:block;width:".$flv_attr['width']."px;height:". $flv_attr['height']."px;'>$splashImage</a></div>";
 			if ( $this->user_attr['flow3key'] != "") {
 				$player=$this->plugin_url."/".$this->player_base[$player]."/flowplayer.commercial-3.2.7.swf";
@@ -359,24 +461,299 @@ class hana_flv_player
 				
 			}
 			
-    		 
-				
+			//For Event Tracking in Google Analytics
+			$event_tracking='';
+			if ($flv_attr['event_tracking'] =='yes') {
+            			$event_tracking="    ,
+				onStart: function(clip) {
+					hanaTrackEvents('Videos', 'Play', clip.url,0); 
+				},
+				onPause: function(clip) {
+					hanaTrackEvents('Videos', 'Pause', clip.url, parseInt(this.getTime()) ); 
+				},
+				onStop: function(clip) {
+					hanaTrackEvents('Videos', 'Stop', clip.url , parseInt(this.getTime()) ); 
+				},
+				onFinish: function(clip) {
+					hanaTrackEvents('Videos', 'Finish', clip.url,0); 
+				} 
+				";    
+				 
+			}
+			
+			//scaling: scale, fit
+			if ($autoheight) $scale='fit'; else $scale='scale';
+			// adding background color  => canvas: { backgroundColor: '#000000', backgroundGradient: 'none',},
 			$output .="
-			<script  type='text/javascript'>
+<script  type='text/javascript'>
+if (typeof g_hanaFlash !== 'undefined' && !g_hanaFlash){
+    jQuery('#$flow3_id').css( 'padding', '5px' );
+	jQuery('#$flow3_id').html(\"<span class='inactive_message' style='display:block'>$inactive_message</span> ".str_replace('"','\"',$description). "\");
+}else{			
 		flowplayer('$flow3_id', { src: '$player', wmode: 'transparent' }, { 
 		$flow3key
+			canvas: { backgroundColor: '#000000', backgroundGradient: 'none',},
     		clip:  { 
     			url: '".$prefix.$flv_attr['video']."',
-        		scaling: 'scale', autoPlay: ".$flv_attr['autoplay'].", autoBuffering: ".$flv_attr['autoload']." 
-				$linkurl $linkwindows $loop $autorewind
+        		scaling: '".$scale."', autoPlay: ".$flv_attr['autoplay'].", autoBuffering: ".$flv_attr['autoload']." 
+				$linkurl $linkwindows $loop $autorewind 
+
+				
+				$event_tracking
+			
 	        }
 	        
 	        $plugin_text
-		}); 
-			</script></hana-ampersand>
-			 ";
+		});
+}
+</script></hana-ampersand>";
+	        
+	    }else
+	    if ($player == '5' ) {	
+		// mediaelement 
+			 
+	    		//<script type='text/javascript' src='".$this->plugin_url."/".$this->player_base[$player]."/build/jquery.js'></script>
+			if ($this->player_used[$player] == 0 ) {
+				//wp_enqueue_script("mediaelementjs-scripts", $this->plugin_url."/".$this->player_base[$player]."/build/mediaelement-and-player.min.js", array('jquery'), "2.7.0", false);
+				//wp_enqueue_style("mediaelementjs-styles", $this->plugin_url."/".$this->player_base[$player]."/build/mediaelementplayer.css");
+
 			
-	    }else  {
+				//20120605 jquery dynamic loading routine added -> needed for MediaElementJS
+				$output = "<hana-ampersand>
+				<script type='text/javascript'>
+				if (typeof jQuery == 'undefined') { document.write('<script type=\"text/javascript\" src=\"".$this->plugin_url."/".$this->player_base[$player]."/build/jquery.js\"><\/script>'); }	
+				</script>
+				<style>.mejs-inner img { max-width:100%; max-height:100%; margin:0 ; padding:0 } 
+				.mejs-overlay-button, .mejs-overlay-loading  {display:none;}</style>
+				<script type='text/javascript' src='".$this->plugin_url."/".$this->player_base[$player]."/build/mediaelement-and-player.min.js'></script>
+				<link rel='stylesheet' href='".$this->plugin_url."/".$this->player_base[$player]."/build/mediaelementplayer.mod.css' />
+				<!-- due to the bug - IE8 does not show video --> 
+				<!--[if IE 8]><style> .me-plugin { position: static; } </style><![endif]-->
+				</hana-ampersand>";
+				
+				 
+			}
+	    	
+
+	    	if (($flv_attr['skin'] == 'mejs-ted' ||  $flv_attr['skin'] =='mejs-wmp' ) && !in_array('mejs-skins',$this->skins)){
+				$this->skins[]='mejs-skins';
+				$output .= "<link rel='stylesheet' href='".$this->plugin_url."/".$this->player_base[$player]."/build/mejs-skins.css' />";
+	    	}
+	    				
+	    	if ( $flv_attr['skin'] == 'onedesign' && !in_array('onedesign',$this->skins)){
+				$this->skins[]='onedesign';
+				$output .= "<link rel='stylesheet' href='".$this->plugin_url."/".$this->player_base[$player]."/build/skin/onedesign/onedesign.css' />";		
+			}
+			
+			$this->player_used[$player] += 1;		
+			 
+			$media_id = 'hana_flv_media_' . $this->player_used[$player]; 
+			
+		 
+			$splashImage='';
+			$preload='none'; //preload='none' doesn't work with IE9
+			$autoplay='';
+			
+			if ($flv_attr['splashimage'] != '') {
+				$splashImage="poster='".$flv_attr['splashimage']."'";
+			}
+			
+			if ($flv_attr['autoload'] == 'true') {				
+				$preload='true';				
+			}
+				
+			
+			//iOS and Android does not allow auto start play and have issues -> implement as javascript below
+			if ($flv_attr['autoplay'] =='true' ){
+				//$autoplay='autoplay="true"'; //when "autoplay" attribute name is used, it is autoplayed
+			 	$preload='none'; //In firefox, preload should be 'none' to execute autoplay . that's strange
+				//$preload='auto'; // it should be auto for chrome to play video with play() javascript funtion; but with firefox it fails to play
+			}
+			//check youtube http://www.youtube.com
+			$youtube='';
+			if ( substr($flv_attr['video'],0,22) == 'http://www.youtube.com'){ 
+				$youtube="type='video/youtube' ";
+			}
+
+			$class="";
+			if ($flv_attr['skin'] != "")
+				$class="class='".$flv_attr['skin']."'";
+				
+			//preload='.$preload.'&amp;
+			$output.="<hana-ampersand><div style='padding:0;margin:0; border:0;'><video $class id='$media_id' $youtube src='".$flv_attr['video']."' width='".$flv_attr['width']."' height='".$flv_attr['height']."' $splashImage 
+	preload='$preload'  $autoplay   controls='controls' >";
+
+			if ($youtube == '')
+				$output.='	<object width="'.$flv_attr['width'].'" height="'.$flv_attr['height'].'" type="application/x-shockwave-flash" data="'.$this->plugin_url."/".$this->player_base[$player].'/build/flashmediaelement.swf"> 		
+		<param name="movie" value="'.$this->plugin_url."/".$this->player_base[$player].'/build/flashmediaelement.swf" /> 
+		<param name="flashvars" value="controls=true&amp;file='.$flv_attr['video'].'&amp;poster='.$flv_attr['splashimage'].'" />		
+		'.$description.'
+	</object>';
+			else
+				$output.=$description;
+				
+			$output.='</video></div></hana-ampersand>';
+			
+ 			
+			$options=""; 
+			if ($flv_attr['loop'] == 'true') {
+				if ($options != '')  $options.=',';
+				$options .= "loop: true";
+			}
+			
+			//pauseOtherPlayers : let user to play other player at the same time
+			//AndroidUseNativeControls : true => this way it's more stable under Android
+			if ($options != '')  $options.=',';
+			$options .= "pauseOtherPlayers: false "; //, AndroidUseNativeControls: true,  iPadUseNativeControls: true , iPhoneUseNativeControls: true";
+			
+			//unfotunately, with HTML5, changing the scale is not possible.  Each browser has its own implementation
+			//if (!$autoheight){
+			//if ($options != '')  $options.=',';
+			//$options .= "enableAutosize: true"; //only for flash player
+			//}
+			
+			$autoplay_js='';
+			if ($flv_attr['autoplay'] =='true' ){
+				//iOS and Android does not allow auto start play
+				//using javascript play function doesn't guarantee play automatically for all three browsers.
+				//but adding autoplay attribute dynamically works for three majotr browsers (IE9, Firefox, Chrome) 
+				$autoplay_js="if (! hana_check_mobile_device()) { jQuery('#".$media_id."').attr('autoplay','true'); }";
+			}
+			
+			
+			
+			//if ($options != '')  $options.=',';
+			//$options.=" features: []";
+			//$options.=" features: ['playpause','progress','current','duration','tracks','volume','fullscreen'],";
+			 
+			if ($flv_attr['more_5'] != '' ) {
+				if ($options != '')  $options.=',';
+				$options.=$flv_attr['more_5'];
+			}
+		
+			$event_tracking="";
+			$event_tracking_body='';
+			if ($flv_attr['event_tracking'] =='yes') {
+				$event_tracking_body="			
+					me.addEventListener('play', function() { hanaTrackEvents('Videos', 'Play', me.src,0); }, false);
+					me.addEventListener('pause', function() { hanaTrackEvents('Videos', 'Pause', me.src, parseInt(me.currentTime) ); }, false);
+					me.addEventListener('ended', function() { hanaTrackEvents('Videos', 'Finish', me.src,0) }, false);
+					";
+			}
+
+			if ($flv_attr['clickurl'] != ''){
+				
+				$target=strtolower($flv_attr['clicktarget']);
+				if ($target == '' || $target=='_self') {
+					$event_tracking_body.="
+					me.addEventListener('click', function() { me.pause(); window.location.href='".$flv_attr['clickurl']."'; },false); ";
+				} else{
+					$event_tracking_body.="
+					me.addEventListener('click', function() {  me.pause(); window.open('".$flv_attr['clickurl']."'); },false); ";	
+				}					
+			}			 
+										
+			if ( $event_tracking_body != ''){
+				$event_tracking=", success: function(me) {\n" . $event_tracking_body . ' }';
+			}			
+	 
+						
+			$output.="<hana-ampersand><script type='text/javascript'>
+				$autoplay_js 
+				jQuery('#".$media_id."').mediaelementplayer({ $options, pluginType:'youtube'  $event_tracking });
+				</script></hana-ampersand>";
+					
+			 
+	    }
+	    else if ($player == '6' ) {	
+	    //flowplayer 5
+	    	/*
+	    	 * TODO: FlowPlayer5 : implement analytics  //flowplayer.conf.analytics = "UA-27182341-1";
+	    	 * 	//Events can be found : Google Analytics > Content > Events > Top Events > Video / Seconds played.
+	    	 * TODO: FlowPlayer5 : custom logo - commercial version key & logo // flowplayer.conf.key="";flowplayer.conf.logo = 'http://mydomain.com/logo.png";  
+	    	 * TODO: FlowPlayer5 : embeding on off //flowplayer.conf.embed = false;
+	    	 * 
+	    	 * or can be done within the div tag.
+	    	 * <div class="flowplayer"
+					data-key="$437712314481272"
+					data-analytics="UA-27182341-1"
+					data-logo="http://flowplayer.org/media/img/mylogo.png">
+ 				   <video preload='none'>
+	    	 * 
+	    	 */
+			if ($this->player_used[$player] == 0 ) {
+				$output="<hana-ampersand>
+				<script type='text/javascript'>
+				if (typeof jQuery == 'undefined') { document.write('<script type=\"text/javascript\" src=\"http://ajax.googleapis.com/ajax/libs/jquery/1/jquery.min.js\"><\/script>'); }	
+				</script>
+				<script src='".$this->plugin_url."/".$this->player_base[$player]."/flowplayer.min.js'></script>
+				<script>flowplayer.conf.embed = false; //disable embeding</script>
+	 			</hana-ampersand>";
+			}
+			
+						
+			$available_skins=array('functional','minimalist','playful');
+			if ($flv_attr['skin'] == '' || !in_array($flv_attr['skin'] ,$available_skins)) {
+				$flv_attr['skin'] = 'minimalist';
+			} 
+			
+			
+			if ( ($flv_attr['skin'] =='functional' || $flv_attr['skin'] == 'minimalist' || $flv_attr['skin'] =='playful' ) 
+				&& !in_array('all-skins',$this->skins)){
+				$this->skins[]='all-skins';				
+				$output .= "<link rel='stylesheet' type='text/css' href='".$this->plugin_url."/".$this->player_base[$player]."/skin/all-skins.css' />";
+			}
+	    	
+	    	
+	    	$this->player_used[$player] += 1;		
+			 
+			$media_id = 'hana_flv_flow5_' . $this->player_used[$player]; 
+			
+	    		 
+			 
+			
+			if ($flv_attr['splashimage'] != '') {
+			
+				 $output.="<style>#$media_id {  background: #000 url(".$flv_attr['splashimage'] .") 0 0 no-repeat; background-size: 100%; }</style>";
+			}
+	    
+			$preload='none'; //preload='none' doesn't work with IE9
+			$autoplay='';
+			$loop='';
+			
+			if ($flv_attr['splashimage'] != '') {
+				$splashImage="poster='".$flv_attr['splashimage']."'";
+			}
+			
+			if ($flv_attr['autoload'] == 'true') {				
+				$preload='true';				
+			}
+				
+			
+			//iOS and Android does not allow auto start play and have issues -> implement as javascript below
+			if ($flv_attr['autoplay'] =='true' ){
+				//$autoplay='autoplay="true"'; //when "autoplay" attribute name is used, it is autoplayed
+			 	$preload='none'; //In firefox, preload should be 'none' to execute autoplay . that's strange
+				//$preload='auto'; // it should be auto for chrome to play video with play() javascript funtion; but with firefox it fails to play
+				$autoplay='autoplay';
+			}
+			
+			if ($flv_attr['loop'] == 'true') {
+				$loop='loop';
+			}
+			
+		
+	    	$output.="
+	    	<div class='flowplayer ".$flv_attr['skin']." ' id='$media_id' style='width:".$flv_attr['width']."px; height:".$flv_attr['height']."px; ' title='".htmlspecialchars($description)."' >
+	   			<video src='".$flv_attr['video']."'  style='background-color:black' $autoplay $loop preload='$preload'></video>
+			</div>";
+	    	
+	    	$output.="<hana-ampersand><script type='text/javascript'>
+			jQuery('#".$media_id."').flowplayer({ });
+			</script></hana-ampersand>";
+
+	    } else  {
+	    
 		   
 	    	if ($this->player_used[$player] == 0 ) 
 				$output = "<hana-ampersand><script src='".$this->plugin_url."/".$this->player_base[$player]."/AC_RunActiveContent.js' language='javascript'></script></hana-ampersand>\n";
@@ -402,21 +779,26 @@ class hana_flv_player
 			}
 		
 	 			
+
 		$output .="<hana-ampersand>
 <div $div_attr_string>
 <script language='javascript'>
- AC_FL_RunContent('codebase', 'http://download.macromedia.com/pub/shockwave/cabs/flash/swflash.cab#version=9,0,0,0', 'width', '".$flv_attr['width']."', 'height', '".$flv_attr['height']."', 'src',  '".$this->plugin_url."/".$this->player_base[$player]."/' + ((!DetectFlashVer(9, 0, 0) && DetectFlashVer(8, 0, 0)) ? 'player8' : 'player'), 'pluginspage', 'http://www.macromedia.com/go/getflashplayer', 'id', 'flvPlayer', 'allowFullScreen', 'true', 'movie', '".$this->plugin_url."/".$this->player_base[$player]."/' + ((!DetectFlashVer(9, 0, 0) && DetectFlashVer(8, 0, 0)) ? 'player8' : 'player'), 'FlashVars', 'movie=".$flv_attr['video']."&bgcolor=0x051615&fgcolor=0x13ABEC&volume=&autoload=".$flv_attr['autoload']."&autoplay=".$flv_attr['autoplay']."&autorewind=".$flv_attr['autorewind']."&loop=".$flv_attr['loop']."&clickurl=".$flv_attr['clickurl']."&clicktarget=$linkwindows','wmode','transparent');
+if (typeof g_hanaFlash !== 'undefined' && !g_hanaFlash){
+	document.write(\"<span style='$inactive_style;padding:5px;'><span style='display:block'>$inactive_message</span> $description</span>\");
+}else {   
+	AC_FL_RunContent('codebase', 'http://download.macromedia.com/pub/shockwave/cabs/flash/swflash.cab#version=9,0,0,0', 'width', '".$flv_attr['width']."', 'height', '".$flv_attr['height']."', 'src',  '".$this->plugin_url."/".$this->player_base[$player]."/' + ((!DetectFlashVer(9, 0, 0) && DetectFlashVer(8, 0, 0)) ? 'player8' : 'player'), 'pluginspage', 'http://www.macromedia.com/go/getflashplayer', 'id', 'flvPlayer', 'allowFullScreen', 'true', 'movie', '".$this->plugin_url."/".$this->player_base[$player]."/' + ((!DetectFlashVer(9, 0, 0) && DetectFlashVer(8, 0, 0)) ? 'player8' : 'player'), 'FlashVars', 'movie=".$flv_attr['video']."&bgcolor=0x333333&fgcolor=0x999999&volume=&autoload=".$flv_attr['autoload']."&autoplay=".$flv_attr['autoplay']."&autorewind=".$flv_attr['autorewind']."&loop=".$flv_attr['loop']."&clickurl=".$flv_attr['clickurl']."&clicktarget=$linkwindows','wmode','transparent');
+}
 </script>
 <noscript>
  <object width='".$flv_attr['width']."' height='".$flv_attr['height']."' id='flvPlayer'>
   <param name='allowFullScreen' value='true'>
   <param name='wmode' value='transparent'> 
-  <param name='movie' value='".$this->plugin_url."/".$this->player_base[$player]."/player.swf?movie=".$flv_attr['video']."&bgcolor=0x051615&fgcolor=0x13ABEC&volume=&autoload=".$flv_attr['autoload']."&autoplay=".$flv_attr['autoplay']."&autorewind=".$flv_attr['autorewind']."&loop=".$flv_attr['loop']."&clickurl=".$flv_attr['clickurl']."&clicktarget=$linkwindows'>
-  <embed src='".$this->plugin_url."/".$this->player_base[$player]."/player.swf?movie=/video/babayhana.flv&bgcolor=0x051615&fgcolor=0x13ABEC&volume=&autoload=".$flv_attr['autoload']."&autoplay=".$flv_attr['autoplay']."&autorewind=".$flv_attr['autorewind']."&loop=".$flv_attr['loop']."&clickurl=".$flv_attr['clickurl']."&clicktarget=$linkwindows' width='400' height='300' allowFullScreen='true' type='application/x-shockwave-flash'>
-  <p>$description</p>
+  <param name='movie' value='".$this->plugin_url."/".$this->player_base[$player]."/player.swf?movie=".$flv_attr['video']."&bgcolor=0x333333&fgcolor=0x999999&volume=&autoload=".$flv_attr['autoload']."&autoplay=".$flv_attr['autoplay']."&autorewind=".$flv_attr['autorewind']."&loop=".$flv_attr['loop']."&clickurl=".$flv_attr['clickurl']."&clicktarget=$linkwindows'>
+  <embed src='".$this->plugin_url."/".$this->player_base[$player]."/player.swf?movie=".$flv_attr['video']."&bgcolor=0x333333&fgcolor=0x999999&volume=&autoload=".$flv_attr['autoload']."&autoplay=".$flv_attr['autoplay']."&autorewind=".$flv_attr['autorewind']."&loop=".$flv_attr['loop']."&clickurl=".$flv_attr['clickurl']."&clicktarget=$linkwindows' width='".$flv_attr['width']."' height='".$flv_attr['height']."' allowFullScreen='true' type='application/x-shockwave-flash'>
+  <span style='$inactive_style;padding:5px;'><span style='display:block'>$inactive_message</span> $description</span>
  </object>
 </noscript>
-</div></hana-ampersand> \n";		
+</div></hana-ampersand> \n";
 
 		}
 		
@@ -433,10 +815,9 @@ class hana_flv_player
 			print '<div id="message" class="updated fade"><p>' . $this->update_result . '</p></div>';
 			
 	    //generate search keyword
-$products=array('Kindle','Apple iPod','Apple iPod Touch','GPS','HD TV','Apple Magic Mouse',
-'Android Tablet','Apple iPad','ebook reader','Kindle','Apple iPod nano','Canon Camera','Webcam',
-'Video Camera','Digital Picture Frame','Blu-ray disc player','External Hard Drive',
-'Wireless Notebook Optical Mouse','Nintendo Wii','Playstation 3','Xbox','video editing software');
+$products=array('Kindle','Apple iPod','Apple iPod Touch','iPad','HD TV','Apple MAC',
+'Android Tablet','Apple iPad','ebook reader','Canon Camera','Video Camera','Kindle Fire','Blu-ray disc player','External Hard Drive',
+'Tablet','Playstation','Xbox','Ultrabook','Laptop Computer');
  
 		$total=count($products);
  		
@@ -453,11 +834,18 @@ $products=array('Kindle','Apple iPod','Apple iPod Touch','GPS','HD TV','Apple Ma
 	   <a href='http://wpmarketing.org/plugins/hana-flv-player/'>Website</a>
 	   </div>
 	<p>
+<?php if (!$this->check_if_maxi_exist()) : ?>
+	<div  style='margin-bottom:10px; padding:5px; background-color:#fff8ae; font-weight:bold'>NOTE: Starting from V2.7.1 , <a href='http://flv-player.net/players/maxi/'>FLV Player Maxi</a> is no longer included by default because it is licensed under non GPL compatible licenses 
+	(<a href='http://creativecommons.org/licenses/by-sa/3.0/deed.en'>CC</a>, <a href='http://www.mozilla.org/MPL/'>MPL 1.1</a>). 
+	But you can still <a href='http://flvplayer.googlecode.com/files/template_maxi_1.6.0.zip'>download</a> (or <a href='http://wpmarketing.org/support/template_maxi_1.6.0.zip'>here</a>) 
+	and unzip it manually under your Hana FLV Player plugin path (<code><?php echo dirname(__FILE__); ?></code>). 
+	So <code><?php echo dirname(__FILE__) . '/template_maxi_1.6.0/template_maxi/player_flv_maxi.swf'; ?></code> must exist.
+	If not, Flow Player 3 will be used instead.
+	</div>
+<?php endif; ?>
 	Now you can easily embed the FLV Flash videos in your WordPress Blog.  
-	I have packaged the three FLV Flash player,<a href='http://www.osflv.com/'>OS FLV</a> (GPL) ,  <a href='http://flowplayer.org/'>FlowPlayer</a> (GPL),
-	and <a href='http://flv-player.net/players/maxi/'>FLV Player Maxi</a> (<a href='http://creativecommons.org/licenses/by-sa/3.0/deed.en'>CC</a>, <a href='http://www.mozilla.org/MPL/'>MPL 1.1</a>).
-	So you can use them freely without worries even for the commercial purpose unlike the JW player.
-	
+	I have packaged the two FLV Flash players - <a href='http://www.osflv.com/'>OS FLV</a> (GPL), <a href='http://flowplayer.org/'>FlowPlayer</a> (GPL), and <a href='http://mediaelementjs.com/'>MediaElement.js</a> HTML5 player to support HTML5 players including Apple devices. So you can use them freely without worries even for the commercial purpose unlike the JW player.
+	( You can also use <a href='http://flv-player.net/players/maxi/'>FLV Player Maxi</a> , but it is no longer included by default because it is licensed under non GPL compatible licenses. ) 	
 
     </p>
     <p>
@@ -471,7 +859,11 @@ $products=array('Kindle','Apple iPod','Apple iPod Touch','GPS','HD TV','Apple Ma
 <li><a href='http://wpmarketing.org/plugins/hana-flv-player/'>Hana Flv Player Home</a></li>
 </ul>
 Now it's Search Engine Friendly. Use the 'description' attribute to leave details about the video. Search engines is able to read them now.
- 	
+<p>
+Use either FLV or H.264 encoded MP4 video files. <a href='http://wpmarketing.org/forum/topic/hana-flv-player-supported-video-types-flv-h264mp4'>More information about how to convert video encodings</a>
+</p>
+
+<!-- 
 <p>
  	Please support Hana Flv Player by shopping at Amazon.com from this search box. Thank you!
 
@@ -479,35 +871,82 @@ Now it's Search Engine Friendly. Use the 'description' attribute to leave detail
  	value='search-alias=aps'  /><input type='text' id='amazon_keyword' name='field-keywords' value='<?php echo $product;?>'  style='height:30px;width:300px;color:grey' onclick='document.getElementById("amazon_keyword").style.color="black";document.getElementById("amazon_keyword").value=""' /> <input type='hidden' name='tag' value='amazon-im-20' /> <input type='image' src='<?php print $this->plugin_url; ?>/button_amazon.jpg' align='ABSMIDDLE'></form>
 </p>	
  	 
+ --> 	
 	
 	
+<style>
+h3 {
+	font-size:1.5em;
+}
+
+div.division {
+	margin-top:10px;
+	padding:5px 10px 5px 10px;
+	border: 2px solid black;
+	-moz-border-radius: 10px;
+	border-radius: 10px;
+}
+
+table#optiontable {
+	border-collapse:collapse;
+}
+
+table#optiontable tr{
+	border-top:1px dotted gray;		
+}
+
+table#optiontable td{
+	padding:5px;
+}
+</style>
  	
-	<hr size='1'>
+<script>
+function check_hflv_player(){
+	select=document.getElementById("hflv_player");
+
+	<?php if (!$this->check_if_maxi_exist()) : ?>
+	if (select.selectedIndex == 2 ){
+		alert("Please note that FLV Player Maxi is not include by default.\nYou need to download it from their website.\nPlease refer to the explanation in the top section.\nIf it does not exist, Flow Player 3 will be used.");
+	}
+	<?php endif;?>
 	
+}
+</script>
+<div class='division'>
+
 	<h3>Default Settings</h3>
-	<form action="" method="post">
+	<form action="" method="post" name='default_setting'>
 	<fieldset  class="options">
 	<table id="optiontable" class="editform">
 		<tr>
 			<th valign="top">Default Player:</th>
-			<td><select name="hflv_player">
-			<option value="1" <?php if ($this->user_attr['player'] == '1' ) print "selected"; ?> >1. OS FLV player (GPL)</option>
-			<option value="2" <?php if ($this->user_attr['player'] == '2' ) print "selected"; ?> >2. Flow Player 2 (GPL)</option>
-			<option value="3" <?php if ($this->user_attr['player'] == '3' ) print "selected"; ?> >3. FLV Player Maxi (CC, MPL1.1)</option>
-			<option value="4" <?php if ($this->user_attr['player'] == '4' ) print "selected"; ?> >4. Flow Player 3 (GPL)</option>
+			<td><select name="hflv_player" id='hflv_player' onchange='check_hflv_player()'>
+			<option value="1" <?php if ($this->user_attr['player'] == '1' ) print "selected"; ?> >1. OS FLV player (GPL) - Flash only</option>
+			<option value="2" <?php if ($this->user_attr['player'] == '2' ) print "selected"; ?> >2. Flow Player 2 (GPL) - Flash only</option>
+			<option value="3" <?php if ($this->user_attr['player'] == '3' ) print "selected"; ?> >3. FLV Player Maxi (CC, MPL1.1) - Flash only</option>
+			<option value="4" <?php if ($this->user_attr['player'] == '4' ) print "selected"; ?> >4. Flow Player 3 (GPL) - Flash only</option>
+			<option value="5" <?php if ($this->user_attr['player'] == '5' ) print "selected"; ?> >5. Mediaelement.js (GPL) - HTML5 & Flash video player</option>
+			<option value="6" <?php if ($this->user_attr['player'] == '6' ) print "selected"; ?> >6. Flow Player 5 (GPL) - HTML5 & Flash video player</option>
 			
 			</select>
-			<a href='http://www.osflv.com/'>OS FLV V2.0.5</a> , <a href='http://flowplayer.org/'>FlowPlayer V2.2.1 / V3.2.7</a>, <a href='http://flv-player.net/players/maxi/'>FLV Player Maxi</a>
+			<a href='http://www.osflv.com/'>OS FLV V2.0.5</a> , <a href='http://flash.flowplayer.org/'>FlowPlayer V2/V3/V5</a>, <a href='http://flowplayer.org/'>FLowPlayer v5.2</a>, <a href='http://flv-player.net/players/maxi/'>FLV Player Maxi</a>
+			<a href='http://mediaelementjs.com/'>MediaElement.js</a>
+			<div style='font-size:0.8em; padding:5px;'>
+			NOTE:To support Apple devices, you must select either Mediaelement.js or FlowPlayer 5. Also remember to encode video using h.264 mp4 ecoding since Apple browsers do not support FLV encodings.  
+			<a href='http://wpmarketing.org/forum/topic/hana-flv-player-supported-video-types-flv-h264mp4'>More information about video encoding</a>
+			</div>
 			</td>
 		</tr>
 		<tr>
 			<th valign="top">Default Width</th>
-			<td><input type='text' name="hflv_width" value="<?php print $this->user_attr['width'];?>" size='4' maxlength='4'> 
+			<td><input type='text' name="hflv_width" value="<?php print $this->user_attr['width'];?>" size='5' maxlength='5'> 
+			Width of the Flash player. Cannot be blank.
 			</td>
 		</tr>
 		<tr>
 			<th valign="top">Default Height</th>
-			<td><input type='text' name="hflv_height" value="<?php print $this->user_attr['height'];?>" size='4' maxlength='4'> 
+			<td><input type='text' name="hflv_height" value="<?php print $this->user_attr['height'];?>" size='5' maxlength='5'> 
+			If empty, height is adjusted automatically based on 4:3 ratio. If you want to use 16:9 ratio, use 'autow' as height value.
 			</td>
 		</tr>
 		<tr>
@@ -516,6 +955,7 @@ Now it's Search Engine Friendly. Use the 'description' attribute to leave detail
 			<option value="true" <?php if ( $this->user_attr['autoload'] == 'true' ) print "selected"; ?> >true</option>
 			<option value="false" <?php if ( $this->user_attr['autoload'] == 'false' ) print "selected"; ?> >false</option>
 			</select>
+			If true, the movie will be loaded (downloaded). If false, the starting screen will be blank since no video is downloaded.
 			</td>
 		</tr>
 		<tr>
@@ -524,6 +964,7 @@ Now it's Search Engine Friendly. Use the 'description' attribute to leave detail
 			<option value="true" <?php if ( $this->user_attr['autoplay'] == 'true' ) print "selected"; ?> >true</option>
 			<option value="false" <?php if ( $this->user_attr['autoplay'] == 'false' ) print "selected"; ?> >false</option>
 			</select>
+			If true, the movie will play automatically when the page is loaded.
 			</td>
 		</tr>
 		<tr>
@@ -532,6 +973,7 @@ Now it's Search Engine Friendly. Use the 'description' attribute to leave detail
 			<option value="true" <?php if ( $this->user_attr['loop'] == 'true' ) print "selected"; ?> >true</option>
 			<option value="false" <?php if ( $this->user_attr['loop'] == 'false' ) print "selected"; ?> >false</option>
 			</select>
+			 If Loop is true, the movie will replay itself constantly.
 			</td>
 		</tr>
 		<tr>
@@ -539,7 +981,39 @@ Now it's Search Engine Friendly. Use the 'description' attribute to leave detail
 			<td><select name="hflv_autorewind">
 			<option value="true" <?php if ( $this->user_attr['autorewind'] == 'true' ) print "selected"; ?> >true</option>
 			<option value="false" <?php if ( $this->user_attr['autorewind'] == 'false' ) print "selected"; ?> >false</option>
-			</select>			
+			</select>
+			 If AutoRewind is true, the cursor will be reset to the start of the movie when the movie is ended.
+			</td>
+		</tr>
+		<tr>
+			<th valign="top">Default Skin</th>
+			<td><input type='text' name="hflv_skin" value="<?php print $this->user_attr['skin'];?>" size='20' maxlength='50'> 			 
+ 		 	Automatically used if player 5 (MediaElement.js) or player 6 (Flowplayer 5) is used.<br />
+ 		 	MediaElement.js: 	
+				<a href='javascript:void(0)' onclick='document.default_setting.hflv_skin.value="mejs-ted";'>mejs-ted</a>,
+				<a href='javascript:void(0)' onclick='document.default_setting.hflv_skin.value="mejs-wmp";'>mejs-wmp</a>,
+				<a href='javascript:void(0)' onclick='document.default_setting.hflv_skin.value="onedesign";'>onedesign</a> <span style='font-size:0.8em'>( Thanks to <a href='http://www.onedesigns.com/freebies/custom-mediaelement-js-skin'>OneDesign</a> )</span>
+			FlowPlayer 5: 	
+				<a href='javascript:void(0)' onclick='document.default_setting.hflv_skin.value="minimalist";'>minimalist</a>,
+				<a href='javascript:void(0)' onclick='document.default_setting.hflv_skin.value="functional";'>functional</a>,
+				<a href='javascript:void(0)' onclick='document.default_setting.hflv_skin.value="playful";'>playful</a>
+					
+			</td>
+		</tr>
+		<tr>
+			<th valign="top">Event Tracking</th>
+			<td>
+			 <select name="hflv_event_tracking">
+			<option value="yes" <?php if ( $this->user_attr['event_tracking'] == 'yes' ) print "selected"; ?> >Yes</option>
+			<option value="no" <?php if ( $this->user_attr['event_tracking'] == 'no' ) print "selected"; ?> >No</option>
+			</select>
+			
+			<div style='margin:5px 0 5px 0'>
+			Enable Event Tracking in Google Analytics. Only works with Flow Player 3 and MediaElement.js. You must add Google Analytics code separately by hard coding into theme files or by using other plugins.
+			<ul style='list-style-type: circle;padding-left:20px;margin:10px'><li>Category:"Videos"</li><li>Actions:"Play","Pause","Stop","Finish"</li><li>Additional played time information is availabe for "Pause" and "Stop"</li></ul>
+			Please check this <a href='http://wpmarketing.org/forum/topic/howto-google-analytics-event-tracking-with-hana-flv-player'>forum post</a> for more information about how to use Google Analytics Event Tracking.
+			
+			</div> 		
 			</td>
 		</tr>
 		<tr>
@@ -566,6 +1040,16 @@ Now it's Search Engine Friendly. Use the 'description' attribute to leave detail
 			</td>
 		</tr>
 		<tr>
+			<th valign="top">Default more_5</th>
+			<td>Automatically used if player 5 (MediaElement.js) is used. You can define the options for the player here.<br />
+			<textarea rows="3" cols="70" name='hflv_more_5'><?php echo htmlspecialchars($this->user_attr['more_5']); ?></textarea>
+			<div> Check out <a href='http://mediaelementjs.com/'>MediaElement.js homepage</a> => player option section for more details. For example, you can remove the controls completly by setting <code>features: []</code> or to see all control buttons <code> features: ['playpause','progress','current','duration','tracks','volume','fullscreen']</code>
+		 			
+			</td>
+		</tr>		
+		
+		
+		<tr>
 			<th valign="top">FlowPlayer 3 License Key</th>
 			<td>
 			FlowPlayer 3 Commercial version will be automatically used when defined. <br />
@@ -587,10 +1071,13 @@ Now it's Search Engine Friendly. Use the 'description' attribute to leave detail
 	</fieldset>
 	</form>
 
-<hr size='1'>
+</div>
+<div class='division'>
 <a name="example" ></a>
    <p>
 	<h3>Usage Example:</h3>
+	There is a tinymce or quicktag button that you can directly use , but here is the full usage example.
+	
 	<pre style="padding: 10px; border:1px dotted black">
 [hana-flv-player 
     video="<?php print $this->plugin_url; ?>/babyhana.flv"
@@ -604,7 +1091,29 @@ Now it's Search Engine Friendly. Use the 'description' attribute to leave detail
     loop="false"
     autorewind="true"
     splashimage="<?php print $this->plugin_url; ?>/splash.jpg"
-/]</pre>
+    skin=""
+/]
+
+Another sample of auto height
+[hana-flv-player 
+    video="<?php print $this->plugin_url; ?>/sarah.flv"
+    width="350"
+    height=""
+    description="Sarah is having fun at the beach"
+    player="4"
+/]
+
+This is a sample of HTML5 player with mp4 video file playing
+[hana-flv-player 
+    video="<?php print $this->plugin_url; ?>/hana_sleding.mp4"
+    description="Hana is having fun while sleding"
+    player="5"
+    autoplay="false"
+    autoload="true"
+    loop="true"
+ /]
+ 
+</pre>
 <p>When you defined any attribute, please make sure that you use single or double quotes around the attribute value, or my plugin may not recognize the attribute. 
 </p>
 
@@ -613,24 +1122,34 @@ Now it's Search Engine Friendly. Use the 'description' attribute to leave detail
 
 		<li><strong>video</strong>: URL of the flv video file. This is mandatory.</li>
 		<li><strong>width</strong>: Width of the Flash player.</li>
-		<li><strong>height</strong>: Height of the Flash player.</li>
+		<li><strong>height</strong>: Height of the Flash player. If not defined, automatically calculated using 4:3 ratio. If 16:9 ratio is needed, use 'autow' as height.</li>
 		<li><strong>description</strong>: Description of the video. This will be shown when <code>the_excerpt()</code> is used. Also it is used within the SWF objects or javascripts, so search engines can read it.</li>
 		<li><strong>clickurl</strong>: If you want to open a website when a user clicks on the video, you can define the target website URL here. </li>
 		<li><strong>clicktarget</strong>: The target of the URL when clicking on the video. Same window:<code>_self</code>, New window <code>_blank</code></li>
 		<li><strong>player</strong>: If set to "1" , <a href='http://www.osflv.com/'>OS FLV</a> will be used. 
 			If set to "2", <a href='http://flowplayer.org/'>FlowPlayer</a> will be used. 
 			"3" is for <a href='http://flv-player.net/players/maxi/'>FLV Player Maxi</a>.
-			"4" is for <a href='http://flowplayer.org'>FlowPlayer 3(3.2.3)</a>.</li>
+			"4" is for <a href='http://flash.flowplayer.org'>FlowPlayer 3(3.2.3)</a>.
+			"5" is for <a href='http://mediaelementjs.com/'>MediaElement.js HTML5 player</a>.
+			"6" is for <a href='http://flowplayer.org/'>FlowPlayer 5 HTML5 player</a>.
+			</li>
 		<li><strong>autoload</strong>: If true, the movie will be loaded (downloaded). If false, the starting screen will be blank since no video is downloaded.</li>
 		<li><strong>autoplay</strong>: If true, the movie will play automatically when the page is loaded.</li>
 		<li><strong>loop</strong>: If Loop is true, the movie will replay itself constantly.</li>
 		<li><strong>autorewind</strong>: If AutoRewind is true, the cursor will be reset to the start of the movie when the movie is ended.</li>
+		<li><strong>skin</strong>: Automatically used if player 5 (MediaElement.js) or player 6 (FlowPlayer 5) is used. Example: mejs-ted, mejs-wmp</li>
+		
 		<li><strong>splashimage</strong>: Only works with FlowPlayer and FLV player Maxi. When autoload is off, this splash image will be shown in the player. It only supports JPEG images.</li>
 		<li><strong>more_2</strong>: more options for the Flow Player v2.  
 		<li><strong>more_3</strong>: more options for the Flv Player. 
 		<li><strong>more_4</strong>: more options for the Flow Player v3. 
+		<li><strong>more_5</strong>: more options for MediaElement.js. 
+ 
 		
 	</ul>
+
+</div>
+
 <script type="text/javascript">
 function hana_flv_player_more_gen(){
 	hide_control=0; //for flowplayer v3 (4)
@@ -853,10 +1372,14 @@ function hana_flv_player_more_gen(){
      
 }
 </script>
-<hr size='1'>
+ 
+ 
+<div class='division'>
 
-	<h3>More Attributes (more_2, more_3, more_4) Sample Generator</h3>
+	<h3><a href='javascript:void(0);' onclick="jQuery('#pane3').toggle('fast');">More Attributes (more_2, more_3, more_4) Sample Generator</a></h3>
 	By using 'more_2','more_3','more_4' attributes, you can use advanced features of the each players. Especially this javascript generator is focused on the interface design option. After selecting the options you want, you can click the 'Generate' button to generate the sample usage in the output textarea.
+	<a href='javascript:void(0);' onclick="jQuery('#pane3').toggle('fast');">Click here to see the form</a>
+<div id='pane3' style='display:none'>
 	<form action="" method="post" onsubmit="hana_flv_player_more_gen(); return false;">
 	<fieldset  class="options">
 	<table id="optiontable" class="editform">
@@ -952,10 +1475,14 @@ function hana_flv_player_more_gen(){
 	<a href='http://flowplayer.org/documentation/configuration/index.html'>Flow Player v3 Configuration options page</a>
 	</fieldset>
 	</form>
+</div>
+</div>
+
+<div class='division'>
     
-    <hr size='1'>
-    
-<h3>Insert flv into template theme files (such as sidebar.php)</h3>
+<h3><a href='javascript:void(0);' onclick="jQuery('#pane4').toggle('fast');">Insert flv into template theme files (such as sidebar.php)</a></h3>
+You can use [hana-flv-player] shorttag within the text widget, but if you want to implement in the template files, you can follow <a href='javascript:void(0);' onclick="jQuery('#pane4').toggle('fast');">this procedure</a>.
+<div id='pane4' style='display:none'>
 Okay, here is the function that you can use in the theme template files to show FLV movie. Basically you need to 
 use <code>hana_flv_player_template_call</code> method. The method takes a single argument.
 The argument should be just the string of the attributes of usage explained the above. Just copy below code into your 
@@ -977,8 +1504,11 @@ controlBarGloss: 'none', usePlayOverlay:false \"</span>
 }
 ?&gt;
 </pre>
-    
-    <div><u><strong>Note:</strong> Be careful when you use other website's video file as the video source. Since video files are usually large is size they can use up the bandwidth quickly. 
+</div>
+
+</div>    
+
+    <div style='margin-top:10px'><u><strong>Note:</strong> Be careful when you use other website's video file as rthe video source. Since video files are usually large is size they can use up the bandwidth quickly. 
     So you should ask for the owner's permission before using that link to the file.</u></div>
 	</p>
     <p>Thank you for using my plugin. - <a href='http://neox.net/'>HanaDaddy</a></p>
@@ -1030,7 +1560,7 @@ controlBarGloss: 'none', usePlayOverlay:false \"</span>
 		}
 		
 		if ( isset($_POST['hflv_height']) ) {
-			if ( is_numeric($_POST['hflv_height']) )
+			if ( $_POST['hflv_height']=='' || is_numeric($_POST['hflv_height']) || $_POST['hflv_height']=='auto' || $_POST['hflv_height']=='autow' )
 				$this->user_attr['height'] = $_POST['hflv_height'];
 		}
 		
@@ -1053,6 +1583,11 @@ controlBarGloss: 'none', usePlayOverlay:false \"</span>
 			if ($_POST['hflv_autoload'] =='true' || $_POST['hflv_autoload'] =='false' )
 				$this->user_attr['autoload'] = $_POST['hflv_autoload'];
 		}
+	    if ( isset($_POST['hflv_event_tracking']) ) {
+			if ($_POST['hflv_event_tracking'] =='yes' || $_POST[hflv_event_tracking] =='no' )
+				$this->user_attr['event_tracking'] = $_POST['hflv_event_tracking'];
+		}
+		
 		if ( isset($_POST['hflv_more_2']) ) {			
 				$this->user_attr['more_2'] = str_replace("\\",'',$_POST['hflv_more_2']);
 		}
@@ -1065,6 +1600,12 @@ controlBarGloss: 'none', usePlayOverlay:false \"</span>
 		
 		if ( isset($_POST['hflv_more_4']) ) {
 				$this->user_attr['flow3key'] = str_replace("\\",'',$_POST['flow3key']);
+		}
+		if ( isset($_POST['hflv_more_5']) ) {
+				$this->user_attr['more_5'] = str_replace("\\",'',$_POST['hflv_more_5']);
+		}
+		if ( isset($_POST['hflv_skin']) ) {
+				$this->user_attr['skin'] = str_replace("\\",'',$_POST['hflv_skin']);
 		}
 		
 		//print_r ($this->user_attr);
@@ -1167,18 +1708,24 @@ controlBarGloss: 'none', usePlayOverlay:false \"</span>
 	}
 
 	function admin_javascript(){
-		//show only when editing a post or page.
-		if (strpos($_SERVER['REQUEST_URI'], 'post.php') || strpos($_SERVER['REQUEST_URI'], 'post-new.php') || strpos($_SERVER['REQUEST_URI'], 'page-new.php') || strpos($_SERVER['REQUEST_URI'], 'page.php')) {
 		
-			//wp_enqueue_script only works  in => 'init'(for all), 'template_redirect'(for only public) , 'admin_print_scripts' for admin only
-			if (function_exists('wp_enqueue_script')) {
-				$jspath='/'. PLUGINDIR  . '/'. $this->plugin_folder.'/jqModal/jqModal.js';
-				wp_enqueue_script('jqmodal_hana', $jspath, array('jquery'));
-			}
-
+		//wp_enqueue_script only works  in => 'init'(for all), 'template_redirect'(for only public) , 'admin_print_scripts' for admin only
+		if (function_exists('wp_enqueue_script')) {
+			$jspath='/'. PLUGINDIR  . '/'. $this->plugin_folder.'/jqModal/jqModal.js';
+			wp_enqueue_script('jqmodal_hana', $jspath, array('jquery'));
+			
+			wp_enqueue_script('media-upload');
+			wp_enqueue_script('thickbox');
+			//wp_register_script('hana-script', $this->plugin_url.'/hana-script.js', array('jquery','media-upload','thickbox'));
+		    //wp_enqueue_script('hana-script');
 		}
 		
 	}
+
+	function admin_style() {
+		wp_enqueue_style('thickbox');
+	}
+	
 	function print_javascript () {
 	 
 ?>
@@ -1186,13 +1733,65 @@ controlBarGloss: 'none', usePlayOverlay:false \"</span>
    <link href="<?php echo $this->plugin_url . '/jqModal/jqModal.css'; ?>" type="text/css" rel="stylesheet" />
 
    <script type="text/javascript">
+    function show_hana_flv_btn(){
+    	jQuery('#dialog_hanaflv').jqmShow();
+    	jQuery.ajax({ 
+    		url: '<?php echo $this->plugin_url ;?>/plugin_feed.php',
+    		type: 'GET',
+    		data: 'id=hana-flv-player',
+    		dataType: 'html',
+    		beforeSend: function() {
+    			jQuery('#hana_flv_notice').html("");
+    		},
+    		success: function(data, textStatus, xhr) {
+    			jQuery('#hana_flv_notice').html(data);
+    		},
+    		error: function(xhr, textStatus, errorThrown) {
+    			jQuery('#hana_flv_notice').html("<center>Thank you for using my plugin! Visit my website <a href='http://wpmarketing.org'>http://wpmarketing.org</a></center>");
+    		}
+    	});
+    }
+
+    //This is for quicktag HTML mode (refering to wp-includes/js/quicktags.dev.js)
+    function click_hana_flv_btn(){
+    	show_hana_flv_btn();
+    }
+
+	
    	jQuery(document).ready(function(){
 		// Add the buttons to the HTML view
-		jQuery("#ed_toolbar").append('<input type=\"button\" class=\"ed_button\" onclick=\"jQuery(\'#dialog_hanaflv\').jqmShow();\" title=\"Hana Flv Player\" value=\"Hana Flv\" />');
+	    if (QTags && typeof QTags.addButton == 'function' ) { // WP 3.3+
+			QTags.addButton('hana_flv_btn','Hana FLV',click_hana_flv_btn);
+			
+	    }else{ // Previous WP versions
+			jQuery("#ed_toolbar").append('<input type=\"button\" class=\"ed_button\" onclick=\"show_hana_flv_btn();\" title=\"Hana Flv Player\" value=\"Hana Flv\" />');
+		}
    	});
-
+	 
 	jQuery(document).ready(function () {
-		jQuery('#dialog_hanaflv').jqm();
+		
+		jQuery('#dialog_hanaflv').jqm({modal:false});	
+
+
+		jQuery('#video_upload_button').click(function() {
+			formfield = jQuery('#video_file').attr('name');
+			tb_show('', 'media-upload.php?type=video&amp;TB_iframe=true');
+			jQuery('#TB_window').css('z-index',4000);
+			return false;
+		});
+
+		var original_send_to_editor=window.send_to_editor;		
+		window.send_to_editor = function(html_text) {
+			if ( jQuery("#dialog_hanaflv").is(":visible") ) {
+				html_text='<div>'+html_text+'</div>'; // not sure, but need to wrap with extra tag to make this work.
+				vurl =jQuery('a',html_text).attr('href');
+				jQuery('#video_file').val(vurl);
+				tb_remove();
+			}else {
+				original_send_to_editor(html_text);
+			}			  
+		}
+		
 	});
 
 	function update_hanaflvplayer(){
@@ -1230,6 +1829,10 @@ controlBarGloss: 'none', usePlayOverlay:false \"</span>
 
 		if (f.splashimage.value.length > 0)		
 			text +='    splashimage="'+f.splashimage.value+'" \n';
+
+		if (f.skin.value.length > 0)		
+			text +='    skin="'+f.skin.value+'" \n';
+		
 			
 		text += ' /]';
 		
@@ -1265,28 +1868,33 @@ controlBarGloss: 'none', usePlayOverlay:false \"</span>
 		?>
 		<div id="dialog_hanaflv" class='jqmWindow' style='display:none'>
 	<div style='width:100%;text-align:center'>
-	<h3><a href='http://wpmarketing.org/plugins/hana-flv-player/' target='_new'>Hana Flv Player</a></h3>
+	<div style='font-size:1.2em;font-weight:bold;margin:10px;'><a href='http://wpmarketing.org/plugins/hana-flv-player/' target='_new'>Hana Flv Player</a></div>
 	 
 
+	 
 	<form name='hanaflvoptions' onsubmit='return false;' >
 	
 	<table style='text-align:left;width:100%;'>
 		<tr> 
-			<td valign='top'>Video(required)</td>
-			<td><input type='text' size='50' name='video' /></td>
+			<td valign='top' width='90'>Video URL (required)</td>
+			<td><input type='text' size='90' name='video' id="video_file" />
+			<span class='submit'><input id="video_upload_button" type="button" value="Upload or Browse Video" 
+				title='Click on the "Insert into Post" button to select file' /></span>
 		</tr>	
 		<tr>
 			<td valign="top">Description</td>
-			<td><input type='text' name='description' size='50'/>			
+			<td><input type='text' name='description' size='90'/>			
 			</td>
 		</tr>
 		<tr>
-			<td valign="top">Flash Player:</td>
+			<td valign="top">Video Player</td>
 			<td><select name="player">
-			<option value="1" <?php if ($this->user_attr['player'] == '1' ) print "selected"; ?> >1. OS FLV player (GPL)</option>
-			<option value="2" <?php if ($this->user_attr['player'] == '2' ) print "selected"; ?> >2. Flow Player 2 (GPL)</option>
-			<option value="3" <?php if ($this->user_attr['player'] == '3' ) print "selected"; ?> >3. FLV Player Maxi (CC, MPL1.1)</option>
-			<option value="4" <?php if ($this->user_attr['player'] == '4' ) print "selected"; ?> >4. Flow Player 3 (GPL)</option>
+			<option value="1" <?php if ($this->user_attr['player'] == '1' ) print "selected"; ?> >1. OS FLV player (GPL) - Flash player only</option>
+			<option value="2" <?php if ($this->user_attr['player'] == '2' ) print "selected"; ?> >2. Flow Player 2 (GPL) - Flash player only</option>
+			<option value="3" <?php if ($this->user_attr['player'] == '3' ) print "selected"; ?> >3. FLV Player Maxi (CC, MPL1.1) - Flash player only</option>
+			<option value="4" <?php if ($this->user_attr['player'] == '4' ) print "selected"; ?> >4. Flow Player 3 (GPL) - Flash player only</option>
+			<option value="5" <?php if ($this->user_attr['player'] == '5' ) print "selected"; ?> >5. Mediaelement.js (GPL) - HTML5 & Flash video player</option>
+			<option value="6" <?php if ($this->user_attr['player'] == '6' ) print "selected"; ?> >6. Flow Player 5 (GPL) - HTML5 & Flash video player</option>
 			
 			</select>
 			</td>
@@ -1299,6 +1907,8 @@ controlBarGloss: 'none', usePlayOverlay:false \"</span>
 		<tr>
 			<td valign="top">Height</td>
 			<td><input type='text' name="height" value="<?php print $this->user_attr['height'];?>" size='4' maxlength='4' /> 
+			<span style='font-size:0.8em'>'<a href='javascript:void(0)' onclick='document.hanaflvoptions.height.value="auto";'>auto</a>' for 4:3 auto height, 
+			'<a href='javascript:void(0)' onclick='document.hanaflvoptions.height.value="autow";'>autow</a>'  for 16:9 auto height</span>
 			</td>
 		</tr>
 		<tr>
@@ -1335,30 +1945,49 @@ controlBarGloss: 'none', usePlayOverlay:false \"</span>
 			</td>
 		</tr>
 		<tr>
+			<td valign="top">Player Skin</td>
+			<td><input type='text' name='skin' size='20'  value="<?php print $this->user_attr['skin'];?>" />
+			<div style='font-size:0.8em'>For MediaElement.js Player : 
+				<a href='javascript:void(0)' onclick='document.hanaflvoptions.skin.value="mejs-ted";'>mejs-ted</a>,
+				<a href='javascript:void(0)' onclick='document.hanaflvoptions.skin.value="mejs-wmp";'>mejs-wmp</a>
+				<a href='javascript:void(0)' onclick='document.hanaflvoptions.skin.value="onedesign";'>onedesign</a>
+			</div>
+			<div style='font-size:0.8em'>For FlowPlayer 5 Player : 
+				<a href='javascript:void(0)' onclick='document.hanaflvoptions.skin.value="minimalist";'>minimalist</a>,
+				<a href='javascript:void(0)' onclick='document.hanaflvoptions.skin.value="functional";'>functional</a>
+				<a href='javascript:void(0)' onclick='document.hanaflvoptions.skin.value="playful";'>playful</a>
+			</div>
+			</td>
+		</tr>
+		<tr>
 			<td valign="top">Click URL</td>
-			<td><input type='text' name='clickurl' size='50' />			
+			<td><input type='text' name='clickurl' size='90' />			
 			</td>
 		</tr>
 		<tr>
 			<td valign="top">Click Target</td>
-			<td><input type='text' name='clicktarget' size='10' />_self (same) , _blank (new window)			
+			<td><input type='text' name='clicktarget' size='10' />
+			<span style='font-size:0.8em'><a href='javascript:void(0)' onclick='document.hanaflvoptions.clicktarget.value="_self";'>_self</a> (same window) , <a href='javascript:void(0)' onclick='document.hanaflvoptions.clicktarget.value="_blank";'>_blank</a> (new window)			
 			</td>
 		</tr>
 		<tr>
 			<td valign="top">Splash Image URL</td>
-			<td><input type='text' name='splashimage' size='50'/>			
+			<td><input type='text' name='splashimage' size='90'/>			
 			</td>
 		</tr>
+		
 	</table>
 
-	 	<p class='submit'><input type='button' value='OK' onclick='update_hanaflvplayer()'; >
-	 	<input type='button' value='Cancel' onclick="jQuery('#dialog_hanaflv').jqmHide();" >
-	 	</p>
+	<p>
+	 	<span class='submit'><input type='button' value='OK' style='width:60px' onclick='update_hanaflvplayer()'; >
+	 	<input type='button' value='Cancel' onclick="jQuery('#dialog_hanaflv').jqmHide();" style='width:60px'>
+	 	</span>
+	</p>
 	</div>	
 	
 	</form>	 
-			
-	 
+    <hr style='width:300px' />
+    <div id='hana_flv_notice' style='margin:auto; width:100%;height:50px; padding:0;overflow:hidden;'></div>
 	
 	</div> 
 	  <?php 
