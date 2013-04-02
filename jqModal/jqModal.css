@@ -8,16 +8,16 @@
     display: none;
     
     position: fixed;
-    top: 17%;
+    top: 5%;
     left: 50%;
-    
-    margin-left: -225px;
-    width: 450px;
+  
+    margin-left: -320px;
+    width: 600px;
     
     background-color: #FFF;
     color: #333;
     border: 10px solid #444;
-    padding: 10px;
+    padding: 5px 10px;
 }
 
 .jqmOverlay { background-color: #000; }
